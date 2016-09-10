@@ -106,7 +106,11 @@ class WhileStatement(Statement):
 
     def eval(self, ctx):
         res = Token('symbol', None)
-        while self.condition.eval(ctx).value:
+        val = self.condition.eval(ctx)
+
+        ctx.trace_conditional(self.condition, val, self.row_col)
+
+        while val.value:
             for stmt in self.stmt_list:
                 try:
                     res = stmt.eval(ctx)
@@ -116,6 +120,9 @@ class WhileStatement(Statement):
 
                 except PseudoContinue:
                     break
+            
+            val = self.condition.eval(ctx)
+            ctx.trace_conditional(self.condition, val, self.row_col)
 
         return res
 
