@@ -1,16 +1,13 @@
-# pseudo-interpreter
+# pseudo2java
 
-An interpreter for simple PASCAL-like pseudo code.
-The pseudo language has been defined to be both easy to learn and its syntax
-very forgiving for newcomers. That being said, this interpreter does not do
-anything that the programmer does not intend, like implicit casting.
+A converter from object-oriented PASCAL-like pseudo code to Java source
+code. The dialect has been designed to map cleanly from pseudo-code to
+Java while allowing for reasonable shortcuts.
 
 ## Features
 
-* REPL shell for program input
-* Forgiving, PASCAL-like syntax
 * Error handling and reporting
-* Designed to complement educational materials
+* Capable of object oriented code
 
 ## Installation
 
@@ -62,7 +59,13 @@ The basic units of syntax are as follows:
     letter          : ['A' - 'Z'] | ['a' - 'z']
                     ;
 
-    hex_letter      : ['A' - 'F'] | ['a' - 'f'] | ['0' - '9']
+    hex_digit       : ['A' - 'F'] | ['a' - 'f'] | ['0' - '9']
+                    ;
+
+    stmt_end        : ':'
+                    | ';'
+                    | '\r\n'
+                    | '\n'
                     ;
 
     ident_begin     : letter | '_'
@@ -74,10 +77,13 @@ The basic units of syntax are as follows:
     identifier      : ident_begin [ident_symbol]*
                     ;
 
+    qual_name       : identifier
+                    | qual_name '.' identifier
+
     string_char     : (any character not including > \ <, > " < or > ' < )
                     | '\r' | '\n'
-                    | '\x' hex_letter hex_letter
-                    | '\u' hex_letter hex_letter hex_letter hex_letter
+                    | '\x' hex_digit hex_digit
+                    | '\u' hex_digit hex_digit hex_digit hex_digit
                     | > \\ <
                     | > \' <
                     | > \" <
@@ -87,28 +93,142 @@ The basic units of syntax are as follows:
                     | > ' < [string_char]* > ' <
                     ;
 
-    number          : [digit]* ['.']? [digit]+
+    dec_literal     : [digit]+
+                    ;
+
+    hex_literal     : '0x' [hex_digit]+ | '0X' [hex_digit]+
+                    ;
+
+    sign            : '-' | '+'
+                    ;
+
+    exp_part        : 'e' [sign]? [digit]+
+                    | 'E' [sign]? [digit]+
+                    ;
+    float_literal   : [digit]+ '.' [digit]* [exp_part]?
+                    | [digit]+ exp_part
+                    ;
+
+    int_literal     : dec_literal | hex_literal
+                    ;
+
+    number          : dec_literal | hex_literal | float_literal
                     ;
 
 ### Comments
 
-Comments are sections of text which are ignored when parsing the file and can
-be used to add inline documentation.
+Comments are sections of text which are reproduced as Java comments in
+the output. The `ASSERT:` syntax is designed to allow for pseudo-assert
+statements, which are merely copied as comments that start with `ASSERT` for
+now.
 
-    comment         : '#' (any character)* '\n'
+    comment         : '#' (any character except '\n')* '\n'
+                    | '//' (any character except '\n')* '\n'
+                    | 'ASSERT:' (any character except '\n')* '\n'
                     ;
 
-### Programs
+### Types
 
-All programs start with a PROGRAM declaration, followed by a statment list:
+All variables must have a type in Java - however, this is not necessarily
+so in pseudocode. At the moment, type declarations or initialisations 
+with types are required before use. Until automatic type inference is 
+implemented, the plain initialisation form will not work and will throw 
+an error.
 
-    program         : program_decl begin_stmt [statement]* end_stmt
+    type_name       : qual_name
+                    | array_type_name
                     ;
 
-    program_decl    : 'PROGRAM' identifier stmt_end
+    array_type_name : 'ARRAY OF' type_name
+                    | 'ARRAY OF' dec_literal type_name
+
+    declaration     : identifier 'AS' type_name stmt_end
+                    | identifier ':=' decl_rhs stmt_end
+                    | identifier 'AS' type_name ':=' decl_rhs stmt_end
                     ;
 
-    begin_stmt      : 'BEGIN' stmt_end
+    decl_rhs        : expression 
+                    | array 
+                    | array 'AS' array_type_name
+                    ;
+
+### Arrays
+
+Arrays function similarly to those in Java. The literal array cannot be
+used freely - only in pure assignment.
+
+    argument_list   : argument_list ',' expression
+                    | expression
+                    ;
+
+    array_item      : expression
+                    | array
+                    ;
+
+    array           : '[' argument_list ']'
+                    ;
+
+### Expressions
+
+Expressions aim to emulate those used in Java, with some verbose options
+that can more clearly communicate intent. The complete expression syntax
+can be found [here][java_bnf], with some changes:
+
+* Assignments cannot be present in expressions.
+  * `expression : conditional_expression;`
+* There are various synonyms for existing operators:
+  * `equality_op : '=' | '==' | 'EQ' ;`
+  * `non_equality_op : '!=' | 'NEQ' ;`
+  * `lt_operator : '<' | 'LT' ;`
+  * `gt_operator : '>' | 'GT' ;`
+  * `le_operator : '<=' | 'LE' ;`
+  * `ge_operator : '>=' | 'GE' ;`
+  * `logical_and_op : '&&' | 'AND' ;`
+  * `logical_or_op : '||' | 'OR' ;`
+  * `unary_not_op : '!' | 'NOT' ;`
+  * `modulus_op : '%' | 'MOD' ;`
+* Convenience operators:
+  * 'DIV' has same precedence as '*', '/', '%' (integer division)
+* Object creation can have an alternative form:
+
+    class_instance_creation_expression :
+                      'new' class_type '(' [argument_list]? ')'
+                    | create_kw class_type 
+                    | create_kw class_type using_kw argument_list 
+                    ;
+
+    create_kw       : 'CREATE'
+                    | 'CONSTRUCT'
+                    ;
+
+    using_kw        : 'USING'
+                    | 'WITH'
+                    ;
+
+### Classes
+
+Classes are the bread and butter of Java programming. The declaration
+supports `extends`, `implements`, `public`, `abstract` and `final`.
+
+Note that `CONST`, `CONSTANT` are synonyms for `FINAL`, and that the plain
+form of `field_decl` without a type may not be supported until type inferencing
+is implemented.
+
+    class           : class_decl [begin_stmt]? [class_content]* end_stmt
+                    ;
+
+    class_decl      : [class_modifier]? 'CLASS' identifier [class_extend]?
+                      [class_iface]* stmt_end
+                    ;
+
+    class_modifier  : 'PUBLIC' | 'ABSTRACT' | 'FINAL'
+                    | 'CONST' | 'CONSTANT'
+                    ;
+
+    class_extend    : 'EXTENDS' identifier
+                    ;
+
+    class_iface     : 'IMPLEMENTS' identifier
                     ;
 
     stmt_end        : ';'
@@ -116,55 +236,102 @@ All programs start with a PROGRAM declaration, followed by a statment list:
                     | '\n'
                     ;
 
+    begin_stmt      : 'BEGIN' stmt_end
+                    ;
+
     end_stmt        : 'END' stmt_end
                     | 'END' identifier stmt_end
                     ;
 
-Programs are run in the REPL using RUN statements with the program name. In a
-code file, if there is only one program present, that program will be run. If
-there are multiple programs, the one named 'main' will be called. If there is
-no program named 'main', an interactive prompt will ask you to specify which
-program is to be run.
-
-    run_stmt        : 'RUN' identifier stmt_end
+    class_content   : field_decl
+                    | method
+                    | constructor
+                    | destructor
                     ;
 
-### Modules
-
-Modules are reusable blocks of code that can return different values based upon
-a set of parameters. Calling modules works similarly to C. Modules occupy a
-different namespace than programs, so a module can be named the same as a
-program.
-
-To cast strings to numbers and numbers to strings, the modules `to_str` and
-`to_num` are provided.
-
-    module          : module_decl [param_decl]* begin_stmt [statement]* end_stmt
+    field_decl      : identifier 'AS' [field_modifier]* type_name stmt_end
+                    | identifier 'AS' [field_modifier]* type_name
+                      ':=' decl_rhs stmt_end
+                    | identifier ':=' decl_rhs stmt_end
                     ;
 
-    module_decl     : 'MODULE' identifier stmt_end
+    field_modifier  : 'PUBLIC' | 'PROTECTED' | 'PRIVATE' | 'STATIC'
+                    | 'FINAL' | 'CONSTANT' | 'CONST'
+                    | 'TRANSIENT' | 'VOLATILE'
                     ;
 
-    param_decl      : 'PARAM' identifier stmt_end
+### Methods
+
+Within classes, methods are blocks of code that can be called repeatedly.
+Every method requires a contract - that is, a specification of its inputs and
+outputs. In Java, the inputs correspond to the method parameters and the
+outputs correspond to the return values. At the moment, only one output
+is supported for each method, and it may be omitted or given a 'NONE' value.
+
+Constructors are special methods within a class that take imports with no
+exports.
+
+At the moment, 'throws' is not supported.
+
+    method          : [method_mod]* 'METHOD' identifier end_stmt
+                      [import_stmt]* export_stmt begin_stmt
+                      [statement]* end_stmt
+
+    method_mod      : 'PUBLIC' | 'PROTECTED' | 'PRIVATE' | 'STATIC'
+                    | 'ABSTRACT' | 'FINAL' | 'CONSTANT' | 'CONST'
+                    | 'SYNCHRONIZED' | 'NATIVE'
                     ;
 
-    module_call     : identifier '(' argument_list ')'
-                    | identifier '()'
+    import_stmt     : 'IMPORT' identifier 'AS' type_name stmt_end
                     ;
 
-    argument_list   :
+    export_stmt     : 'EXPORT' identifier 'AS' type_name stmt_end
+                    ;
+
+    constructor     : [construct_mod]* 'CONSTRUCTOR' end_stmt
+                      [import_stmt]* begin_stmt
+                      [statement]* end_stmt
+                    ;
+
+    construct_mod   : 'PUBLIC' | 'PROTECTED' | 'PRIVATE'
+                    ;
+
+### Programs
+
+Programs map to public classes with an automatic `public static void main()`
+method.
+
+    program         : program_decl begin_stmt [statement]* end_stmt
+                    ;
+
+    program_decl    : 'PROGRAM' identifier stmt_end
+                    ;
 
 ### Statements
 
 Statments can be either assignment, selection, iteration, jump or I/O
-statments, or an expression such as a module call:
+statments, an expression such as a module call, or a comment (so that they
+can be preserved in the Java output):
 
     statement       : assignment_stmt stmt_end
+                    | decl_stmt stmt_end
                     | selection_stmt stmt_end
                     | iteration_stmt stmt_end
                     | jump_stmt stmt_end
                     | io_stmt stmt_end
                     | expression stmt_end
+                    | comment
+                    ;
+
+### Declarations
+
+A declaration creates a variable with a specified type, and optionally an
+initial value. In Java, all variables require declaration before use. In this
+language, variables may not support use without declaration (like Java) until
+automatic type inferencing is implemented.
+
+    decl_stmt       : identifier 'AS' type_name
+                    | identifier 'AS' type_name ':=' decl_rhs
                     ;
 
 ### Assignment Statements
@@ -172,21 +339,19 @@ statments, or an expression such as a module call:
 Assignment statements assign a value to a variable. If a variable is referenced
 without being assigned a value, an error will be raised.
 
-    assigment_stmt  : identifier assignment_op expression
-                    ;
-
-    assignment_op   : '<-'
-                    | ':='
-                    | '='
+    assigment_stmt  : identifier ':=' expression
                     ;
 
 ### Selection Statements
 
 Selection statements conditionally execute other statements based upon an
-expression.
+expression. The switch statement works a bit differently than Java/C: each
+case can have more than one match, and all cases have an automatic `break;`
+appended to the end.
 
     selection_stmt  : if_stmt [statement]* end_stmt
                     | if_stmt [statement]* else_block end_stmt
+                    | switch_stmt [case_block]* [otherwise_block]? end_stmt
                     ;
 
     if_stmt         : 'IF' expression [then_kw]? stmt_end
@@ -200,6 +365,19 @@ expression.
                     | 'DO'
                     ;
 
+    switch_stmt     : 'SWITCH' expression stmt_end
+                    ;
+
+    case_block      : 'IN CASE' int_literal stmt_end [sub_case]*
+                      [expression]*
+                    ;
+
+    sub_case        : 'OR CASE' int_literal stmt_end
+                    ;
+
+    otherwise_block : 'OTHERWISE' stmt_end [expression]*
+                    ;
+
 ### Iteration Statements
 
 Iteration statements execute the same set of statements over and over
@@ -207,6 +385,7 @@ conditionally or for a certain number of times.
 
     iteration_stmt  : while_stmt [statement]* repeat_stmt
                     | for_stmt [statement]* repeat_stmt
+                    | 'DO' stmt_end [statement]* while_stmt
                     ;
 
     while_stmt      : 'WHILE' expression [then_kw]? stmt_end
@@ -222,8 +401,19 @@ conditionally or for a certain number of times.
 
 ### Jump Statements
 
-Jump statements change the control flow unconditionally and can be used to
-terminate iteration loops prematurely or return values from modules.
+Jump statements change the control flow unconditionally. In this pseudo-code
+transpiler, most uses of jump statements are advised against.
+
+In the following conditions, a warning is emitted:
+
+* `BREAK` is used at all
+    * note: for `SWITCH` statements, `break;` is appended automatically to all
+      cases
+* `CONTINUE` is used at all
+* `RETURN` is used in a program
+* `RETURN` is used more than once in a module
+* `RETURN` is not at the end of a module with a return value
+
 
     jump_stmt       : 'BREAK' stmt_end
                     | 'CONTINUE' stmt_end
@@ -232,49 +422,24 @@ terminate iteration loops prematurely or return values from modules.
 
 ### I/O Statements
 
-I/O statements are the methods of input and output that pseudo programs have
-available to them. An INPUT statement can also accept a type identifier, which
-tries to get an input from the user that always has the specified type.
+I/O statements are the methods of input and output that pseudo programs
+have available to them. These map to functions on System.out.
+The `FORMAT WITH` syntax maps to System.out.printf, with the same string
+format.
 
-    io_stmt         : 'INPUT' [type_spec]? identifier
+    io_stmt         : 'INPUT' identifier 'AS' type_name
                     | 'OUTPUT' expression
+                    | 'OUTPUT' expression 'FORMAT WITH' argument_list 
                     ;
-
-    type_spec       : 'NUMBER' | 'REAL' | 'FLOAT'
-                    | 'INT' | 'INTEGER'
-                    | 'STRING'
-                    ;
-
-### Expressions
-
-Expressions are very similar to those in C, including the same operators and
-identical order of operations. I've decided not to recreate the C syntax here,
-as it's (mostly) intutive and similar to how ordinary math works. There are a
-few differences:
-
-* Assignments cannot be present in expressions.
-* Ternary operators have not been implemented.
-* The comma operator has not been implemented.
-* There are various synonyms for the operators, including text keywords:
-    * `equality_op      : '=' | '==' | 'eq' ;`
-    * `non_equality_op  : '!=' | 'neq' ;`
-    * `lt_operator      : '<' | 'lt' ;`
-    * `gt_operator      : '>' | 'gt' ;`
-    * `le_operator      : '<=' | 'le' ;`
-    * `ge_operator      : '>=' | 'ge' ;`
-    * `logical_and_op   : '&&' | 'and' ;`
-    * `logical_or_op    : '||' | 'or' ;`
-    * `unary_not_op     : '!' | 'not' ;`
-
 ## Examples
 
-Examples of (hopefully) valid pseudo-code programs that can be ran with the
-interpreter are in the `test/` directory.
+Examples of (hopefully) valid pseudo-code programs that can be ran with
+the converter are in the `test/` directory.
 
 ## Planned Improvements
 
-* More iteration types (test-last)
 * Import support
 
-(C) Thomas Bell 2016, MIT License.
+(C) Thomas Bell 2016-2019, MIT License.
 
+[java_bnf]: https://users-cs.au.dk/amoeller/RegAut/JavaBNF.html

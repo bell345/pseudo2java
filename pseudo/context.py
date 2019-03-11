@@ -29,6 +29,13 @@ class DefaultModules:
             return None
 
     @staticmethod
+    def to_int(s):
+        try:
+            return int(s)
+        except ValueError:
+            return None
+
+    @staticmethod
     def upper(s): return s.upper()
     @staticmethod
     def lower(s): return s.lower()
@@ -37,6 +44,7 @@ class DefaultModules:
         mods = {
             'to_str': DefaultModules.to_str,
             'to_num': DefaultModules.to_num,
+            'to_int': DefaultModules.to_int,
             'upper': DefaultModules.upper,
             'lower': DefaultModules.lower
         }
