@@ -110,8 +110,8 @@ def repl():
 def main():
 
     parser = argparse.ArgumentParser(prog=APP_NAME,
-            description="An interpreter for simple PASCAL-like pseudo code.",
-            epilog="(C) Thomas Bell 2016, MIT License.")
+            description="Transpiler from PASCAL-like pseudo code to Java.",
+            epilog="(C) Thomas Bell 2016-2019, MIT License.")
     parser.add_argument("--version", action="version", version=APP_VERSION)
 
     parser.add_argument("input_file", type=argparse.FileType('r'), nargs="?",
